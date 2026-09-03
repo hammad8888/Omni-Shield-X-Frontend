@@ -37,7 +37,7 @@ This repository contains the standalone frontend application for OmniShield-X, d
 
 ### 2. Installation
 ```bash
-git clone https://github.com/YOUR-USERNAME/Omni-Shield-X-Frontend.git
+git clone https://github.com/hammad8888/Omni-Shield-X-Frontend.git
 cd Omni-Shield-X-Frontend
 npm install
 ```
@@ -80,7 +80,7 @@ npm run preview
    git add .
    git commit -m "Initial commit of Omni-Shield-X-Frontend"
    git branch -M main
-   git remote add origin https://github.com/YOUR-USERNAME/Omni-Shield-X-Frontend.git
+   git remote add origin https://github.com/hammad8888/Omni-Shield-X-Frontend.git
    git push -u origin main
    ```
 
