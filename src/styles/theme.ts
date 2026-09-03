@@ -1,0 +1,37 @@
+export const theme = {
+  colors: {
+    bgMain: "#F8FAFC",
+    bgCard: "#FFFFFF",
+    border: "#E2E8F0",
+    textPrimary: "#0F172A",
+    textSecondary: "#334155",
+    textMuted: "#64748B",
+    primary: "#2563EB",
+    primaryHover: "#1D4ED8",
+    primaryLight: "#EFF6FF",
+    success: "#22C55E",
+    successLight: "#F0FDF4",
+    warning: "#F59E0B",
+    warningLight: "#FEF3C7",
+    danger: "#EF4444",
+    dangerLight: "#FEF2F2",
+    cyan: "#06B6D4",
+    teal: "#14B8A6",
+  },
+  typography: {
+    fontFamily: "Inter, sans-serif",
+    monoFamily: "JetBrains Mono, monospace",
+  },
+  radii: {
+    sm: "6px",
+    md: "8px",
+    lg: "12px",
+    xl: "16px",
+    full: "9999px",
+  },
+  shadows: {
+    subtle: "0 1px 2px 0 rgba(0, 0, 0, 0.03)",
+    card: "0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05)",
+    hover: "0 4px 12px -2px rgba(15, 23, 42, 0.08)",
+  },
+};

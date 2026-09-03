@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-main: #f8fafc;
+    --bg-card: #ffffff;
+    --border-color: #e2e8f0;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    --primary: #2563eb;
+    --primary-light: #eff6ff;
+    --success: #10b981;
+    --success-light: #ecfdf5;
+    --warning: #f59e0b;
+    --warning-light: #fffbeb;
+    --danger: #ef4444;
+    --danger-light: #fef2f2;
+    --purple: #8b5cf6;
+    --purple-light: #f5f3ff;
+  }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background-color: var(--bg-main);
+    color: var(--text-main);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Custom clean subtle scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: #f1f5f9;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+}
+
+@layer components {
+  .dashboard-card {
+    @apply bg-white border border-slate-200/90 rounded-2xl shadow-sm transition-all duration-200;
+  }
+
+  .dashboard-card-hover {
+    @apply hover:border-slate-300 hover:shadow-md;
+  }
+
+  .glass-header {
+    @apply bg-white/95 backdrop-blur-md border-b border-slate-200/90;
+  }
+
+  .badge-pulse {
+    @apply relative flex h-2 w-2;
+  }
+
+  .badge-pulse-ping {
+    @apply animate-ping absolute inline-flex h-full w-full rounded-full opacity-75;
+  }
+
+  .badge-pulse-dot {
+    @apply relative inline-flex rounded-full h-2 w-2;
+  }
+
+  /* Trading Ticker Flash Animations */
+  @keyframes tickUpFlash {
+    0% { background-color: rgba(16, 185, 129, 0.2); }
+    100% { background-color: transparent; }
+  }
+
+  @keyframes tickDownFlash {
+    0% { background-color: rgba(239, 68, 68, 0.2); }
+    100% { background-color: transparent; }
+  }
+
+  .animate-tick-up {
+    animation: tickUpFlash 1.2s ease-out;
+  }
+
+  .animate-tick-down {
+    animation: tickDownFlash 1.2s ease-out;
+  }
+}
