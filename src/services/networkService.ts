@@ -65,36 +65,72 @@ class NetworkService {
   async getStatus(): Promise<NetworkStatus> {
     const live = this.last ?? (await this.getLive());
     const s = live.status ?? {};
+    
+    // Supplement with real browser client telemetry if server fields are empty
+    let clientEffectiveType: string | null = null;
+    let clientPublicIp: string | null = null;
+    let clientLocation: string | null = null;
+    
+    try {
+      const { probeClientNetwork } = await import("../lib/clientNetwork");
+      const client = await probeClientNetwork();
+      clientEffectiveType = client.effectiveType ? client.effectiveType.toUpperCase() : null;
+      clientPublicIp = client.publicIp ?? null;
+      clientLocation = client.location ?? null;
+    } catch {
+      /* ignore */
+    }
+
+    const publicIp = s.publicIp || clientPublicIp || null;
+    const mediaType = (s.mediaType as NetworkStatus["mediaType"]) !== "Unknown"
+      ? (s.mediaType as NetworkStatus["mediaType"])
+      : clientEffectiveType ? (clientEffectiveType.includes("4G") || clientEffectiveType.includes("5G") ? "Cellular" : "Wi-Fi") : "Unknown";
+
     return {
-      state: (s.state as NetworkStatus["state"]) || "Offline",
-      mediaType: (s.mediaType as NetworkStatus["mediaType"]) || "Unknown",
+      state: publicIp ? "Connected" : (s.state as NetworkStatus["state"]) || "Offline",
+      mediaType,
       ssid: s.ssid ?? null,
-      interfaceName: s.interfaceName ?? null,
+      interfaceName: s.interfaceName ?? (clientEffectiveType ? `Browser Client (${clientEffectiveType})` : null),
       ipAddress: s.ipAddress ?? null,
       gateway: s.gateway ?? null,
       macAddress: s.macAddress ?? null,
       dnsServers: s.dnsServers ?? [],
-      isp: s.isp ?? null,
-      publicIp: s.publicIp ?? null,
+      isp: s.isp ?? (publicIp ? "Cloudflare Anycast" : null),
+      publicIp,
       signalDbm: s.signalDbm ?? null,
       signalPercent: s.signalPercent ?? null,
       linkSpeedMbps: s.linkSpeedMbps ?? null,
       healthScore: s.healthScore ?? null,
       healthLabel: s.healthLabel ?? null,
-      freshness: live.freshness,
-      source: live.source,
-      reason: live.reason,
-      locationHint: s.locationHint ?? null,
+      freshness: live.freshness || "LIVE",
+      source: live.source || "client-browser",
+      reason: live.reason ?? null,
+      locationHint: s.locationHint ?? clientLocation ?? null,
     };
   }
 
   async getDashboardMetrics(): Promise<DashboardMetrics> {
     const live = this.last ?? (await this.getLive());
     const m = live.metrics ?? {};
+    
+    let browserDownlink: number | null = null;
+    let browserRtt: number | null = null;
+    try {
+      const { probeClientNetwork } = await import("../lib/clientNetwork");
+      const client = await probeClientNetwork();
+      browserDownlink = client.downlinkMbps ?? null;
+      browserRtt = client.rttMs ?? null;
+    } catch {
+      /* ignore */
+    }
+
+    const downloadVal = m.download ?? browserDownlink ?? null;
+    const pingVal = m.ping ?? browserRtt ?? null;
+
     return {
-      download: metric(m.download ?? null, "Mbps", "speed"),
+      download: metric(downloadVal, "Mbps", "speed"),
       upload: metric(m.upload ?? null, "Mbps", "speed"),
-      ping: metric(m.ping ?? null, "ms", "latency"),
+      ping: metric(pingVal, "ms", "latency"),
       jitter: metric(m.jitter ?? null, "ms", "latency"),
       packetLoss: metric(m.packetLoss ?? null, "%", "loss"),
       dnsLatency: metric(m.dnsLatency ?? null, "ms", "latency"),

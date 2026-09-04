@@ -15,24 +15,18 @@ export const DevicesPage: React.FC = () => {
 
   useEffect(() => {
     deviceService.getDevices().then((devs) => {
-      if (devs && devs.length > 0) {
-        setDevices(devs);
-      } else {
-        setDevices([
-          { id: "dev-1", name: "Host PC (This Station)", ipAddress: "192.168.1.100", macAddress: "00:1A:2B:3C:4D:5E", vendor: "Intel / Microsoft", type: "Computer", connectionType: "Wired", status: "Online", firstSeen: "Today", lastSeen: "Just now", rxBytes: 1048576, txBytes: 524288 },
-          { id: "dev-2", name: "iPhone 15 Pro", ipAddress: "192.168.1.105", macAddress: "44:55:66:77:88:99", vendor: "Apple Inc.", type: "Phone", connectionType: "Wi-Fi 5G", status: "Online", signalDbm: -48, firstSeen: "Yesterday", lastSeen: "Just now", rxBytes: 524288, txBytes: 262144 },
-          { id: "dev-3", name: "Samsung Smart TV 4K", ipAddress: "192.168.1.112", macAddress: "88:99:AA:BB:CC:DD", vendor: "Samsung Electronics", type: "TV", connectionType: "Wi-Fi 5G", status: "Online", signalDbm: -56, firstSeen: "3 days ago", lastSeen: "2 mins ago", rxBytes: 2097152, txBytes: 131072 },
-          { id: "dev-4", name: "PlayStation 5 Console", ipAddress: "192.168.1.120", macAddress: "A0:B1:C2:D3:E4:F5", vendor: "Sony Interactive", type: "Computer", connectionType: "Wired", status: "Online", firstSeen: "1 week ago", lastSeen: "Just now", rxBytes: 4194304, txBytes: 1048576 },
-        ]);
-      }
+      setDevices(devs ?? []);
     });
   }, []);
 
   const handleRescan = async () => {
     setIsScanning(true);
-    const updated = await deviceService.scanSubnet();
-    if (updated && updated.length > 0) setDevices(updated);
-    setIsScanning(false);
+    try {
+      const updated = await deviceService.scanSubnet();
+      setDevices(updated ?? []);
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   const onlineCount = devices.filter((d) => d.status === "Online").length;

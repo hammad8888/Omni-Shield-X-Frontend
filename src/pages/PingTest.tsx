@@ -13,8 +13,8 @@ export const PingTestPage: React.FC = () => {
   const [targetHost, setTargetHost] = useState("1.1.1.1");
   const [method, setMethod] = useState<"tcp" | "icmp">("tcp");
   const [isPinging, setIsPinging] = useState(true);
-  const [pingHistory, setPingHistory] = useState<number[]>([14, 15, 13, 16, 14, 13, 15, 14]);
-  const [jitterHistory, setJitterHistory] = useState<number[]>([1.2, 1.5, 1.1, 1.8, 1.4, 1.2, 1.5, 1.3]);
+  const [pingHistory, setPingHistory] = useState<number[]>([]);
+  const [jitterHistory, setJitterHistory] = useState<number[]>([]);
   const [loss, setLoss] = useState<number | null>(0);
   const [reason, setReason] = useState<string | null>(null);
 
@@ -41,22 +41,51 @@ export const PingTestPage: React.FC = () => {
     const tick = async () => {
       const host = targetHost === "gateway" ? status?.gateway || "1.1.1.1" : targetHost;
       try {
-        const query =
-          method === "icmp"
-            ? `/api/ping?host=${encodeURIComponent(host)}&method=icmp`
-            : `/api/ping?host=${encodeURIComponent(host)}&port=443&method=tcp`;
-        const res = await api<{
-          pingMs?: number | null;
-          jitterMs?: number | null;
-          packetLossPct?: number | null;
-          reason?: string;
-          freshness?: string;
-        }>(query);
+        let measuredPing: number | null = null;
+        let measuredJitter: number | null = null;
+        let measuredLoss: number | null = 0;
+
+        try {
+          const query =
+            method === "icmp"
+              ? `/api/ping?host=${encodeURIComponent(host)}&method=icmp`
+              : `/api/ping?host=${encodeURIComponent(host)}&port=443&method=tcp`;
+          const res = await api<{
+            pingMs?: number | null;
+            jitterMs?: number | null;
+            packetLossPct?: number | null;
+            reason?: string;
+            freshness?: string;
+          }>(query);
+          measuredPing = res.pingMs ?? null;
+          measuredJitter = res.jitterMs ?? null;
+          measuredLoss = res.packetLossPct ?? 0;
+          if (res.reason) setReason(res.reason);
+        } catch {
+          // Browser direct ping measurement
+          const { measureBrowserPing } = await import("../lib/clientNetwork");
+          measuredPing = await measureBrowserPing();
+          measuredLoss = measuredPing != null ? 0 : 100;
+        }
+
         if (cancelled) return;
-        setReason(res.reason ?? (res.freshness === "LIVE" ? null : "No live samples"));
-        setLoss(res.packetLossPct ?? 0);
-        if (res.pingMs != null) setPingHistory((prev) => [...prev.slice(-19), res.pingMs as number]);
-        if (res.jitterMs != null) setJitterHistory((prev) => [...prev.slice(-19), res.jitterMs as number]);
+
+        setLoss(measuredLoss);
+        if (measuredPing != null && measuredPing > 0) {
+          setReason(null);
+          setPingHistory((prev) => {
+            const next = [...prev.slice(-19), measuredPing!];
+            if (measuredJitter == null && next.length >= 2) {
+              const mean = next.reduce((a, b) => a + b, 0) / next.length;
+              const variance = next.reduce((sum, val) => sum + (val - mean) ** 2, 0) / (next.length - 1);
+              measuredJitter = Math.round(Math.sqrt(variance) * 10) / 10;
+            }
+            return next;
+          });
+        }
+        if (measuredJitter != null) {
+          setJitterHistory((prev) => [...prev.slice(-19), measuredJitter!]);
+        }
       } catch (err) {
         if (!cancelled) setReason(err instanceof Error ? err.message : "Ping collector unavailable");
       }
@@ -69,13 +98,13 @@ export const PingTestPage: React.FC = () => {
     };
   }, [isPinging, targetHost, method, status?.gateway]);
 
-  const currentPing = pingHistory[pingHistory.length - 1] ?? 14;
-  const currentJitter = jitterHistory[jitterHistory.length - 1] ?? 1.4;
-  const minPing = pingHistory.length ? Math.min(...pingHistory) : 12;
-  const maxPing = pingHistory.length ? Math.max(...pingHistory) : 18;
+  const currentPing = pingHistory.length ? pingHistory[pingHistory.length - 1] : null;
+  const currentJitter = jitterHistory.length ? jitterHistory[jitterHistory.length - 1] : null;
+  const minPing = pingHistory.length ? Math.min(...pingHistory) : null;
+  const maxPing = pingHistory.length ? Math.max(...pingHistory) : null;
   const avgPing = pingHistory.length
     ? Number((pingHistory.reduce((a, b) => a + b, 0) / pingHistory.length).toFixed(1))
-    : 14;
+    : null;
 
   const chartData: TradingDataPoint[] = pingHistory.map((val, idx) => ({
     label: `${idx + 1}`,
@@ -135,26 +164,43 @@ export const PingTestPage: React.FC = () => {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Current Ping</span>
-          <span className="mt-1 font-mono text-2xl font-black text-emerald-600 block">{currentPing} <span className="text-xs font-normal text-slate-500">ms</span></span>
-          <span className="text-[10px] text-emerald-700 font-bold">★ Sub-20ms RTT</span>
+          <span className="mt-1 font-mono text-2xl font-black text-emerald-600 block">
+            {currentPing != null ? `${currentPing} ` : "— "}
+            <span className="text-xs font-normal text-slate-500">ms</span>
+          </span>
+          <span className="text-[10px] text-emerald-700 font-bold">
+            {currentPing != null ? (currentPing < 30 ? "★ Optimal Latency" : "Live Stream") : "Sampling..."}
+          </span>
         </div>
 
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Average RTT</span>
-          <span className="mt-1 font-mono text-2xl font-black text-blue-600 block">{avgPing} <span className="text-xs font-normal text-slate-500">ms</span></span>
-          <span className="text-[10px] text-slate-500">Min: {minPing}ms • Max: {maxPing}ms</span>
+          <span className="mt-1 font-mono text-2xl font-black text-blue-600 block">
+            {avgPing != null ? `${avgPing} ` : "— "}
+            <span className="text-xs font-normal text-slate-500">ms</span>
+          </span>
+          <span className="text-[10px] text-slate-500">
+            Min: {minPing != null ? `${minPing}ms` : "—"} • Max: {maxPing != null ? `${maxPing}ms` : "—"}
+          </span>
         </div>
 
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Jitter Variance</span>
-          <span className="mt-1 font-mono text-2xl font-black text-purple-600 block">{currentJitter} <span className="text-xs font-normal text-slate-500">ms</span></span>
-          <span className="text-[10px] text-slate-500">Near-zero jitter</span>
+          <span className="mt-1 font-mono text-2xl font-black text-purple-600 block">
+            {currentJitter != null ? `${currentJitter} ` : "— "}
+            <span className="text-xs font-normal text-slate-500">ms</span>
+          </span>
+          <span className="text-[10px] text-slate-500">
+            {currentJitter != null ? (currentJitter < 3 ? "Stable stream" : "Fluctuating") : "Calculating..."}
+          </span>
         </div>
 
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Packet Loss</span>
-          <span className="mt-1 font-mono text-2xl font-black text-emerald-600 block">{dash(loss ?? 0)}%</span>
-          <span className="text-[10px] text-slate-500">0 dropped packets</span>
+          <span className="mt-1 font-mono text-2xl font-black text-emerald-600 block">{dash(loss != null ? `${loss}%` : "0%")}</span>
+          <span className="text-[10px] text-slate-500">
+            {loss === 0 ? "0 dropped packets" : `${loss}% loss rate`}
+          </span>
         </div>
       </div>
 

@@ -53,30 +53,16 @@ export const EthernetPage: React.FC = () => {
     ? adapters
     : [
         {
-          name: "Ethernet (Intel(R) Ethernet Controller I225-V)",
-          up: true,
-          speedMbps: 1000,
+          name: status?.interfaceName || (status?.publicIp ? "Active Network Interface (Default Route)" : "Primary Network Adapter"),
+          up: Boolean(status?.publicIp || status?.ipAddress),
+          speedMbps: status?.linkSpeedMbps ?? null,
           mtu: 1500,
-          ipv4: "192.168.1.100",
-          ipv6: "fe80::1a2b:3c4d:5e6f",
-          mac: "00:1A:2B:3C:4D:5E",
-          duplex: "Full Duplex",
-          rxBytes: 1248592000,
-          txBytes: 489201000,
-          rxErrors: 0,
-          txErrors: 0,
-        },
-        {
-          name: "Wi-Fi (Intel(R) Wi-Fi 6 AX200)",
-          up: true,
-          speedMbps: 1200,
-          mtu: 1500,
-          ipv4: "192.168.1.102",
+          ipv4: status?.ipAddress ?? status?.publicIp ?? null,
           ipv6: null,
-          mac: "00:1A:2B:3C:4D:5F",
+          mac: status?.macAddress ?? null,
           duplex: "Full Duplex",
-          rxBytes: 524859000,
-          txBytes: 189201000,
+          rxBytes: null,
+          txBytes: null,
           rxErrors: 0,
           txErrors: 0,
         },
@@ -87,7 +73,7 @@ export const EthernetPage: React.FC = () => {
     if (row.speedMbps == null) return max;
     return max == null || row.speedMbps > max ? row.speedMbps : max;
   }, null);
-  const fastestParts = speedParts(fastest || 1000, speedUnit);
+  const fastestParts = speedParts(fastest || (status?.linkSpeedMbps ?? 0), speedUnit);
 
   return (
     <div className="space-y-6">

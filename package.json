@@ -9,6 +9,7 @@
     "preview": "vite preview --port 8080 --strictPort"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.37.0",
     "react": "^19.0.0",

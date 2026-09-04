@@ -45,8 +45,9 @@ export const StreamingTestPage: React.FC = () => {
     void load();
   }, []);
 
-  const downloadParts = speedParts(data?.downloadMbps ?? 85, speedUnit);
-  const readinessScore = data?.overallReadinessPercent ?? 95;
+  const downloadSpeed = data?.downloadMbps ?? null;
+  const downloadParts = speedParts(downloadSpeed ?? 0, speedUnit);
+  const readinessScore = data?.overallReadinessPercent ?? (downloadSpeed != null ? Math.min(100, Math.round((downloadSpeed / 30) * 100)) : null);
 
   const simulateStream = (name: string) => {
     setSimulating(name);
@@ -90,7 +91,7 @@ export const StreamingTestPage: React.FC = () => {
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="flex items-center gap-6">
             <CircularMeter
-              value={readinessScore}
+              value={readinessScore ?? 0}
               max={100}
               label="Streaming Index"
               unit="PTS"

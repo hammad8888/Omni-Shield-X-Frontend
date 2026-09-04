@@ -18,34 +18,56 @@ export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
 
   // Continuous real-time ring buffers for live spline waves
-  const [liveLatencySamples, setLiveLatencySamples] = useState<number[]>([12, 14, 13, 15, 14, 13, 14, 12, 13, 14]);
-  const [liveJitterSamples, setLiveJitterSamples] = useState<number[]>([1.2, 1.4, 1.1, 1.6, 1.3, 1.2, 1.5, 1.3, 1.2, 1.4]);
-  const [liveThroughputSamples, setLiveThroughputSamples] = useState<number[]>([68, 72, 70, 75, 73, 71, 74, 76, 72, 75]);
-  const [liveSignalSamples, setLiveSignalSamples] = useState<number[]>([90, 91, 89, 92, 90, 91, 93, 90, 91, 92]);
+  const [liveLatencySamples, setLiveLatencySamples] = useState<number[]>([]);
+  const [liveJitterSamples, setLiveJitterSamples] = useState<number[]>([]);
+  const [liveThroughputSamples, setLiveThroughputSamples] = useState<number[]>([]);
+  const [liveSignalSamples, setLiveSignalSamples] = useState<number[]>([]);
 
-  // Sample real network ping every 1.2s to feed the continuous wave chart
+  // Sample real network ping & telemetry every 1.2s to feed the continuous wave chart
   useEffect(() => {
     let cancelled = false;
     const pollRealMetric = async () => {
       try {
-        const pingRes = await api<{ pingMs?: number | null; jitterMs?: number | null }>("/api/ping?host=1.1.1.1&port=443&method=tcp");
+        let measuredPing: number | null = null;
+        let measuredJitter: number | null = null;
+
+        try {
+          const pingRes = await api<{ pingMs?: number | null; jitterMs?: number | null }>("/api/ping?host=1.1.1.1&port=443&method=tcp");
+          measuredPing = pingRes.pingMs ?? null;
+          measuredJitter = pingRes.jitterMs ?? null;
+        } catch {
+          // Client browser ping fallback
+          const { measureBrowserPing } = await import("../lib/clientNetwork");
+          measuredPing = await measureBrowserPing();
+        }
+
         if (cancelled) return;
-        if (pingRes.pingMs != null) {
-          setLiveLatencySamples((prev) => [...prev.slice(-19), Number(pingRes.pingMs)]);
-        }
-        if (pingRes.jitterMs != null) {
-          setLiveJitterSamples((prev) => [...prev.slice(-19), Number(pingRes.jitterMs)]);
+
+        if (measuredPing != null && measuredPing > 0) {
+          setLiveLatencySamples((prev) => {
+            const next = [...prev.slice(-19), measuredPing!];
+            if (measuredJitter == null && next.length >= 2) {
+              const mean = next.reduce((a, b) => a + b, 0) / next.length;
+              const variance = next.reduce((sum, val) => sum + (val - mean) ** 2, 0) / (next.length - 1);
+              measuredJitter = Math.round(Math.sqrt(variance) * 10) / 10;
+            }
+            return next;
+          });
         }
 
-        const baseDown = metrics?.download?.value ?? (status?.linkSpeedMbps ? Math.round(status.linkSpeedMbps * 0.75) : 75);
-        if (baseDown > 0) {
-          // slight natural packet burst variation around real measured baseline
-          const burst = baseDown + (Math.sin(Date.now() / 1500) * (baseDown * 0.04));
-          setLiveThroughputSamples((prev) => [...prev.slice(-19), Math.max(1, Math.round(burst * 10) / 10)]);
+        if (measuredJitter != null) {
+          setLiveJitterSamples((prev) => [...prev.slice(-19), measuredJitter!]);
         }
 
-        const sig = status?.signalPercent ?? 92;
-        setLiveSignalSamples((prev) => [...prev.slice(-19), sig]);
+        const currentDown = metrics?.download?.value ?? history[0]?.downloadMbps ?? null;
+        if (currentDown != null && currentDown > 0) {
+          setLiveThroughputSamples((prev) => [...prev.slice(-19), currentDown]);
+        }
+
+        const sig = status?.signalPercent ?? (status?.mediaType === "Ethernet" ? 100 : null);
+        if (sig != null) {
+          setLiveSignalSamples((prev) => [...prev.slice(-19), sig]);
+        }
       } catch {
         /* keep last sample */
       }
@@ -57,11 +79,11 @@ export const DashboardPage: React.FC = () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [metrics?.download?.value, status?.linkSpeedMbps, status?.signalPercent]);
+  }, [metrics?.download?.value, history, status?.signalPercent, status?.mediaType]);
 
   const isConnected = status?.state === "Connected" || Boolean(status?.publicIp);
-  const downParts = speedParts(metrics?.download?.value ?? status?.linkSpeedMbps ?? 75, speedUnit);
-  const upParts = speedParts(metrics?.upload?.value ?? (status?.linkSpeedMbps ? Math.round(status.linkSpeedMbps * 0.4) : 30), speedUnit);
+  const downParts = speedParts(metrics?.download?.value ?? history[0]?.downloadMbps ?? 0, speedUnit);
+  const upParts = speedParts(metrics?.upload?.value ?? history[0]?.uploadMbps ?? 0, speedUnit);
 
   const graphUnit =
     graphMetric === "throughput"

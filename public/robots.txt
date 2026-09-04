@@ -1,0 +1,6 @@
+# robots.txt for OmniShield-X
+User-agent: *
+Allow: /
+
+# Sitemap URL
+Sitemap: https://omni-shield-x.vercel.app/sitemap.xml

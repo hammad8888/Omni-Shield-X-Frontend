@@ -50,7 +50,7 @@ export const GamingPage: React.FC = () => {
   const [genre, setGenre] = useState("All");
   const [customHost, setCustomHost] = useState("");
   const [customPort, setCustomPort] = useState("443");
-  const [livePings, setLivePings] = useState<number[]>([14, 15, 13, 16, 14, 13, 15, 14]);
+  const [livePings, setLivePings] = useState<number[]>([]);
   const [activeTarget, setActiveTarget] = useState<string>("prod-live-front.playbattlegrounds.com");
   const [activeTargetName, setActiveTargetName] = useState<string>("PUBG (Battlegrounds)");
 
@@ -83,9 +83,16 @@ export const GamingPage: React.FC = () => {
     let stop = false;
     const sample = async () => {
       try {
-        const ping = await api<{ pingMs?: number | null }>(`/api/ping?host=${encodeURIComponent(activeTarget)}&port=443&method=tcp`);
-        if (!stop && ping.pingMs != null) {
-          setLivePings((prev) => [...prev.slice(-19), ping.pingMs as number]);
+        let measuredPing: number | null = null;
+        try {
+          const ping = await api<{ pingMs?: number | null }>(`/api/ping?host=${encodeURIComponent(activeTarget)}&port=443&method=tcp`);
+          measuredPing = ping.pingMs ?? null;
+        } catch {
+          const { measureBrowserPing } = await import("../lib/clientNetwork");
+          measuredPing = await measureBrowserPing(`https://${activeTarget}`);
+        }
+        if (!stop && measuredPing != null && measuredPing > 0) {
+          setLivePings((prev) => [...prev.slice(-19), measuredPing!]);
         }
       } catch {
         /* keep last measured */
@@ -101,7 +108,7 @@ export const GamingPage: React.FC = () => {
 
   const genres = useMemo(() => ["All", ...Array.from(new Set(catalog.map((row) => row.genre).filter(Boolean) as string[]))], [catalog]);
   const visible = catalog.filter((row) => genre === "All" || row.genre === genre);
-  const down = speedParts(readiness?.downloadMbps ?? 85, speedUnit);
+  const down = speedParts(readiness?.downloadMbps ?? 0, speedUnit);
 
   const chartData: TradingDataPoint[] = livePings.map((val, idx) => ({
     label: `${idx + 1}`,

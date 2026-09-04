@@ -28,8 +28,10 @@ export const WiFiOverviewPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"overview" | "channels" | "nearby">("overview");
 
   const activeChannels = activeBand === "2.4 GHz" ? channels24 : channels5G;
-  const signalDbm = currentWifi?.signalDbm ?? (status?.signalDbm ?? -52);
-  const signalQuality = Math.min(100, Math.max(0, Math.round(2 * (signalDbm + 100))));
+  const signalDbm = currentWifi?.signalDbm ?? status?.signalDbm ?? null;
+  const signalQuality = signalDbm != null ? Math.min(100, Math.max(0, Math.round(2 * (signalDbm + 100)))) : null;
+  const activeSsid = currentWifi?.ssid || status?.ssid || null;
+  const isConnected = Boolean(activeSsid || status?.publicIp);
 
   return (
     <div className="space-y-6">
@@ -61,29 +63,37 @@ export const WiFiOverviewPage: React.FC = () => {
             <div>
               <div className="flex items-center gap-3">
                 <h2 className="text-2xl font-black text-slate-900 tracking-tight">
-                  {currentWifi?.ssid || status?.ssid || "OmniShield-5G"}
+                  {activeSsid || (isConnected ? "Network Connected" : "No Radio Association")}
                 </h2>
                 <StatusBadge
-                  status={currentWifi?.ssid || status?.ssid ? "connected" : "offline"}
-                  label={currentWifi?.ssid || status?.ssid ? "Live Associated" : "Scanning"}
+                  status={isConnected ? "connected" : "offline"}
+                  label={activeSsid ? "Live Associated" : isConnected ? "Internet Active" : "Scanning"}
                   size="sm"
-                  withPulse={Boolean(currentWifi?.ssid || status?.ssid)}
+                  withPulse={isConnected}
                 />
               </div>
               <p className="text-xs text-slate-500 mt-1 font-mono">
-                BSSID: <span className="text-slate-800 font-semibold">{currentWifi?.bssid || "00:1A:2B:3C:4D:5E"}</span> • PHY:{" "}
-                <span className="font-bold text-blue-600">{currentWifi?.phyType || "Wi-Fi 6 (802.11ax)"}</span> • Security:{" "}
-                <span className="text-slate-700 font-semibold">{currentWifi?.security || "WPA2-Personal"}</span>
+                BSSID: <span className="text-slate-800 font-semibold">{currentWifi?.bssid || "Gateway Routed"}</span> • PHY:{" "}
+                <span className="font-bold text-blue-600">{currentWifi?.phyType || status?.mediaType || "802.11 / IP"}</span> • Mode:{" "}
+                <span className="text-slate-700 font-semibold">{currentWifi?.security || "Active Session"}</span>
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-4 bg-white border border-slate-200 rounded-2xl p-3.5 shadow-2xs shrink-0">
-            <SignalStrength dbm={signalDbm} size="lg" showPercent />
+            {signalDbm != null ? (
+              <SignalStrength dbm={signalDbm} size="lg" showPercent />
+            ) : (
+              <div className="text-xs text-slate-400 font-mono px-2">RSSI: Host Managed</div>
+            )}
             <div className="border-l border-slate-200 pl-3 text-right">
-              <span className="text-[10px] uppercase font-bold text-slate-400 block">PHY Link Speed</span>
+              <span className="text-[10px] uppercase font-bold text-slate-400 block">Link Throughput</span>
               <span className="text-lg font-black text-blue-600 font-mono">
-                {currentWifi?.linkSpeedMbps != null ? formatSpeed(currentWifi.linkSpeedMbps, speedUnit) : "1200 Mbps"}
+                {currentWifi?.linkSpeedMbps != null
+                  ? formatSpeed(currentWifi.linkSpeedMbps, speedUnit)
+                  : status?.publicIp
+                    ? "Active Stream"
+                    : "—"}
               </span>
             </div>
           </div>
@@ -157,7 +167,7 @@ export const WiFiOverviewPage: React.FC = () => {
       {activeTab === "overview" && (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           <div className="lg:col-span-2">
-            <SignalChart historyDbm={[signalDbm, signalDbm + 1, signalDbm - 1, signalDbm, signalDbm + 2, signalDbm]} />
+            <SignalChart historyDbm={signalDbm != null ? [signalDbm] : []} />
           </div>
 
           <div className="flex flex-col justify-between dashboard-card p-5">
@@ -168,7 +178,7 @@ export const WiFiOverviewPage: React.FC = () => {
 
             <div className="flex justify-center my-2">
               <CircularMeter
-                value={signalQuality}
+                value={signalQuality ?? (isConnected ? 100 : 0)}
                 max={100}
                 label="Radio Quality"
                 unit="%"
@@ -176,7 +186,7 @@ export const WiFiOverviewPage: React.FC = () => {
                 strokeWidth={12}
                 colorScheme="emerald"
                 delta={0.5}
-                sublabel={`${signalDbm} dBm`}
+                sublabel={signalDbm != null ? `${signalDbm} dBm` : (isConnected ? "Network Active" : "No Radio Link")}
                 icon="📶"
               />
             </div>

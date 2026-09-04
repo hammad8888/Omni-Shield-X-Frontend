@@ -84,13 +84,13 @@ export const RouterOverviewPage: React.FC = () => {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">WAN Gateway IP</span>
-          <span className="mt-1 font-mono text-lg font-black text-blue-600 block">{dash(info?.gateway, "192.168.1.1")}</span>
+          <span className="mt-1 font-mono text-lg font-black text-blue-600 block">{dash(info?.gateway, "Default Route")}</span>
           <span className="text-[10px] text-slate-500">Default Route Hop</span>
         </div>
 
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Public WAN IP</span>
-          <span className="mt-1 font-mono text-lg font-black text-slate-900 block">{dash(info?.publicIp, "104.28.19.42")}</span>
+          <span className="mt-1 font-mono text-lg font-black text-slate-900 block">{dash(info?.publicIp, "Active Route")}</span>
           <span className="text-[10px] text-emerald-700 font-semibold">Online & Routed</span>
         </div>
 
@@ -102,8 +102,8 @@ export const RouterOverviewPage: React.FC = () => {
 
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">DHCP Leases</span>
-          <span className="mt-1 font-mono text-lg font-black text-purple-600 block">{dash(info?.connectedClientsCount != null ? String(info.connectedClientsCount) : "4", "4")} Active</span>
-          <span className="text-[10px] text-slate-500">Pool: .100 - .200</span>
+          <span className="mt-1 font-mono text-lg font-black text-purple-600 block">{info?.connectedClientsCount ?? 0} Active</span>
+          <span className="text-[10px] text-slate-500">Subnet Allocated</span>
         </div>
       </div>
 
