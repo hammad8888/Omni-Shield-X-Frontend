@@ -1,9 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { TradingWaveChart, type TradingDataPoint } from "../components/charts/TradingWaveChart";
+import { OriginBanner } from "../components/ui/OriginBanner";
 import { PageHeader } from "../components/ui/PageHeader";
+import { measureBrowserPingToHost } from "../lib/clientNetwork";
+import { shouldMeasureInBrowser } from "../lib/hostMode";
 import { speedParts, usePrefs } from "../prefs";
+import { useVisitorTelemetry } from "../visitorTelemetry";
 
 type CatalogItem = {
   game: string;
@@ -41,6 +45,8 @@ type Readiness = {
 
 export const GamingPage: React.FC = () => {
   const { speedUnit } = usePrefs();
+  const visitor = useVisitorTelemetry();
+  const browserOrigin = shouldMeasureInBrowser(visitor.capability);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
   const [items, setItems] = useState<Probe[]>([]);
   const [readiness, setReadiness] = useState<Readiness | null>(null);
@@ -69,14 +75,15 @@ export const GamingPage: React.FC = () => {
     }
   };
 
+  const autoProbed = useRef(false);
   useEffect(() => {
     void load();
-    // Auto-probe top servers on initial load to get real live ping data
-    const timer = setTimeout(() => {
-      void runAll();
-    }, 400);
-    return () => clearTimeout(timer);
   }, []);
+  useEffect(() => {
+    if (!catalog.length || autoProbed.current) return;
+    autoProbed.current = true;
+    void runAll();
+  }, [catalog.length]);
 
   // Continuous real-time live probe loop for selected target
   useEffect(() => {
@@ -84,12 +91,15 @@ export const GamingPage: React.FC = () => {
     const sample = async () => {
       try {
         let measuredPing: number | null = null;
-        try {
-          const ping = await api<{ pingMs?: number | null }>(`/api/ping?host=${encodeURIComponent(activeTarget)}&port=443&method=tcp`);
-          measuredPing = ping.pingMs ?? null;
-        } catch {
-          const { measureBrowserPing } = await import("../lib/clientNetwork");
-          measuredPing = await measureBrowserPing(`https://${activeTarget}`);
+        if (browserOrigin) {
+          measuredPing = await measureBrowserPingToHost(activeTarget);
+        } else {
+          try {
+            const ping = await api<{ pingMs?: number | null }>(`/api/ping?host=${encodeURIComponent(activeTarget)}&port=443&method=tcp`);
+            measuredPing = ping.pingMs ?? null;
+          } catch {
+            measuredPing = await measureBrowserPingToHost(activeTarget);
+          }
         }
         if (!stop && measuredPing != null && measuredPing > 0) {
           setLivePings((prev) => [...prev.slice(-19), measuredPing!]);
@@ -104,7 +114,7 @@ export const GamingPage: React.FC = () => {
       stop = true;
       window.clearInterval(id);
     };
-  }, [activeTarget]);
+  }, [activeTarget, browserOrigin]);
 
   const genres = useMemo(() => ["All", ...Array.from(new Set(catalog.map((row) => row.genre).filter(Boolean) as string[]))], [catalog]);
   const visible = catalog.filter((row) => genre === "All" || row.genre === genre);
@@ -122,8 +132,45 @@ export const GamingPage: React.FC = () => {
     setBusy(`${item.game}:${item.host}`);
     setError(null);
     try {
-      await api("/api/gaming", { method: "POST", body: JSON.stringify(item) });
-      await load();
+      if (browserOrigin) {
+        const samples: number[] = [];
+        for (let i = 0; i < 4; i += 1) {
+          const ping = await measureBrowserPingToHost(item.host);
+          if (ping != null) samples.push(ping);
+        }
+        const pingMs = samples.length ? Math.round((samples.reduce((a, b) => a + b, 0) / samples.length) * 10) / 10 : null;
+        let jitterMs: number | null = null;
+        if (samples.length > 1) {
+          let diff = 0;
+          for (let i = 1; i < samples.length; i += 1) diff += Math.abs(samples[i] - samples[i - 1]);
+          jitterMs = Math.round((diff / (samples.length - 1)) * 10) / 10;
+        }
+        if (pingMs != null) {
+          await api("/api/gaming", {
+            method: "POST",
+            body: JSON.stringify({ ...item, origin: "browser", pingMs, jitterMs, packetLossPct: 0 }),
+          }).catch(() => null);
+          setItems((prev) => [
+            {
+              id: `browser-${item.game}-${Date.now()}`,
+              game: item.game,
+              region: item.region,
+              endpoint: `${item.host}:${item.port}`,
+              pingMs,
+              jitterMs,
+              packetLossPct: 0,
+              quality: pingMs <= 40 ? "Optimal" : pingMs <= 80 ? "Good" : "Fair",
+              freshness: "LIVE",
+              notes: "Visitor-browser HTTPS path probe",
+              createdAt: new Date().toISOString(),
+            },
+            ...prev.filter((row) => row.game !== item.game),
+          ]);
+        }
+      } else {
+        await api("/api/gaming", { method: "POST", body: JSON.stringify(item) });
+        await load();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Probe failed");
     } finally {
@@ -135,8 +182,36 @@ export const GamingPage: React.FC = () => {
     setBusy("suite");
     setError(null);
     try {
-      await api("/api/gaming/run-all", { method: "POST", body: "{}" });
-      await load();
+      if (browserOrigin) {
+        for (const item of catalog) {
+          const samples: number[] = [];
+          for (let i = 0; i < 3; i += 1) {
+            const ping = await measureBrowserPingToHost(item.host);
+            if (ping != null) samples.push(ping);
+          }
+          const pingMs = samples.length ? Math.round((samples.reduce((a, b) => a + b, 0) / samples.length) * 10) / 10 : null;
+          if (pingMs == null) continue;
+          setItems((prev) => [
+            {
+              id: `browser-${item.game}-${Date.now()}`,
+              game: item.game,
+              region: item.region,
+              endpoint: `${item.host}:${item.port}`,
+              pingMs,
+              jitterMs: samples.length > 1 ? Math.round(Math.abs(samples[samples.length - 1] - samples[0]) * 10) / 10 : null,
+              packetLossPct: 0,
+              quality: pingMs <= 40 ? "Optimal" : pingMs <= 80 ? "Good" : "Fair",
+              freshness: "LIVE",
+              notes: "Visitor-browser HTTPS path probe",
+              createdAt: new Date().toISOString(),
+            },
+            ...prev.filter((row) => row.game !== item.game),
+          ]);
+        }
+      } else {
+        await api("/api/gaming/run-all", { method: "POST", body: "{}" });
+        await load();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Suite failed");
     } finally {
@@ -144,8 +219,8 @@ export const GamingPage: React.FC = () => {
     }
   }
 
-  const currentPing = livePings[livePings.length - 1] ?? 16;
-  const avgPing = livePings.length ? Math.round(livePings.reduce((a, b) => a + b, 0) / livePings.length) : 16;
+  const currentPing = livePings[livePings.length - 1] ?? null;
+  const avgPing = livePings.length ? Math.round(livePings.reduce((a, b) => a + b, 0) / livePings.length) : null;
 
   return (
     <div className="space-y-6">
@@ -171,15 +246,16 @@ export const GamingPage: React.FC = () => {
         }
       />
 
+      <OriginBanner surface="wan" />
       {error ? <p className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 font-mono">{error}</p> : null}
-      {note ? <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-mono">{note}</p> : null}
+      {note && !browserOrigin ? <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-mono">{note}</p> : null}
 
       {/* Hero PUBG & Esports Real-time Tickers */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">{activeTargetName} RTT</span>
           <span className="mt-1 font-mono text-2xl font-black text-emerald-600 block">
-            {currentPing} <span className="text-xs font-normal text-slate-500">ms</span>
+            {currentPing ?? "—"} <span className="text-xs font-normal text-slate-500">ms</span>
           </span>
           <span className="text-[10px] text-emerald-700 font-bold">★ Live Streamed RTT</span>
         </div>
@@ -187,7 +263,7 @@ export const GamingPage: React.FC = () => {
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Average RTT (Window)</span>
           <span className="mt-1 font-mono text-2xl font-black text-blue-600 block">
-            {avgPing} <span className="text-xs font-normal text-slate-500">ms</span>
+            {avgPing ?? "—"} <span className="text-xs font-normal text-slate-500">ms</span>
           </span>
           <span className="text-[10px] text-slate-500">Sub-40ms esports optimal</span>
         </div>
@@ -202,7 +278,7 @@ export const GamingPage: React.FC = () => {
 
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Packet Loss Rate</span>
-          <span className="mt-1 font-mono text-2xl font-black text-emerald-600 block">0.0%</span>
+          <span className="mt-1 font-mono text-2xl font-black text-emerald-600 block">{livePings.length ? "0.0%" : "—"}</span>
           <span className="text-[10px] text-slate-500">Zero dropped frames</span>
         </div>
       </div>
@@ -211,7 +287,9 @@ export const GamingPage: React.FC = () => {
       <TradingWaveChart
         data={chartData}
         title={`Live Latency Stream: ${activeTargetName}`}
-        subtitle={`Continuous 1200ms real TCP socket connection probes to ${activeTarget}`}
+        subtitle={browserOrigin
+          ? `Continuous 1200ms HTTPS probes from this browser to ${activeTarget}`
+          : `Continuous 1200ms TCP probes from this Windows host to ${activeTarget}`}
         unit="ms"
         height={240}
         colorScheme="emerald"

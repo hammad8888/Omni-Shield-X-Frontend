@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from "react";
+import { OriginBanner } from "../components/ui/OriginBanner";
+import { shouldMeasureInBrowser } from "../lib/hostMode";
 import { deviceService } from "../services/deviceService";
+import { useVisitorTelemetry } from "../visitorTelemetry";
 import type { ConnectedDevice } from "../types";
 import { DeviceTable } from "../components/ui/DeviceTable";
 import { Drawer } from "../components/ui/FeedbackStates";
@@ -12,16 +15,42 @@ export const DevicesPage: React.FC = () => {
   const [selectedDevice, setSelectedDevice] = useState<ConnectedDevice | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [filterMode, setFilterMode] = useState<"all" | "wifi" | "ethernet" | "online">("all");
+  const visitor = useVisitorTelemetry();
+  const browserOrigin = shouldMeasureInBrowser(visitor.capability);
 
   useEffect(() => {
+    if (browserOrigin) {
+      const self: ConnectedDevice[] = [];
+      if (visitor.publicIp || visitor.localIp) {
+        self.push({
+          id: "visitor-browser",
+          name: "This browser",
+          ipAddress: visitor.localIp ?? visitor.publicIp ?? null,
+          macAddress: null,
+          vendor: visitor.isp ?? "Visitor session",
+          type: "Unknown",
+          connectionType: visitor.mediaType,
+          signalDbm: null,
+          status: visitor.publicIp ? "Online" : "Idle",
+          firstSeen: null,
+          lastSeen: "browser",
+          rxBytes: null,
+          txBytes: null,
+          source: "visitor-browser",
+        });
+      }
+      setDevices(self);
+      return;
+    }
     deviceService.getDevices().then((devs) => {
       setDevices(devs ?? []);
     });
-  }, []);
+  }, [browserOrigin, visitor.publicIp, visitor.localIp, visitor.isp, visitor.mediaType]);
 
   const handleRescan = async () => {
     setIsScanning(true);
     try {
+      if (browserOrigin) return;
       const updated = await deviceService.scanSubnet();
       setDevices(updated ?? []);
     } finally {
@@ -58,6 +87,8 @@ export const DevicesPage: React.FC = () => {
         }
       />
 
+      <OriginBanner surface="lan" />
+
       {/* Hero Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="dashboard-card p-4">
@@ -74,7 +105,7 @@ export const DevicesPage: React.FC = () => {
 
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Wi-Fi Stations</span>
-          <span className="mt-1 font-mono text-2xl font-black text-blue-600 block">{wifiCount || 2}</span>
+          <span className="mt-1 font-mono text-2xl font-black text-blue-600 block">{wifiCount}</span>
           <span className="text-[10px] text-slate-500">Wireless clients</span>
         </div>
 

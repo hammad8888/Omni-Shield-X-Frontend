@@ -4,6 +4,7 @@ import { App } from "./App";
 import { AuthProvider } from "./auth";
 import { PrefsProvider } from "./prefs";
 import { RealtimeProvider } from "./realtime";
+import { VisitorTelemetryProvider } from "./visitorTelemetry";
 import "./index.css";
 
 createRoot(document.getElementById("root")!).render(
@@ -11,7 +12,9 @@ createRoot(document.getElementById("root")!).render(
     <AuthProvider>
       <PrefsProvider>
         <RealtimeProvider>
-          <App />
+          <VisitorTelemetryProvider>
+            <App />
+          </VisitorTelemetryProvider>
         </RealtimeProvider>
       </PrefsProvider>
     </AuthProvider>

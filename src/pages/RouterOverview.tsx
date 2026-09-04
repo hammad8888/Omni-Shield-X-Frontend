@@ -5,6 +5,7 @@ import { RouterCard } from "../components/ui/RouterCard";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { api } from "../api";
+import { OriginBanner } from "../components/ui/OriginBanner";
 import { dash } from "../lib/format";
 
 type ModemProbe = {
@@ -55,6 +56,7 @@ export const RouterOverviewPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <OriginBanner surface="modem" />
       <PageHeader
         title="Router & Modem Management Hub"
         description="Observed default gateway, WAN/LAN configurations, DHCP leases, port forwarding, firewall protection, and modem diagnostic probes."

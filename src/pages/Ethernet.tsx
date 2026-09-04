@@ -5,7 +5,10 @@ import { StatusBadge } from "../components/ui/StatusBadge";
 import { PageHeader } from "../components/ui/PageHeader";
 import { dash } from "../lib/format";
 import { formatSpeed, speedParts, usePrefs } from "../prefs";
+import { OriginBanner } from "../components/ui/OriginBanner";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import { shouldMeasureInBrowser } from "../lib/hostMode";
+import { useVisitorTelemetry } from "../visitorTelemetry";
 
 type Adapter = {
   name: string;
@@ -33,6 +36,8 @@ type EthernetResponse = {
 export const EthernetPage: React.FC = () => {
   const { speedUnit } = usePrefs();
   const { adapters, error, refresh, loading, status } = useNetworkStatus();
+  const visitor = useVisitorTelemetry();
+  const browserOrigin = shouldMeasureInBrowser(visitor.capability);
   const [note, setNote] = useState<string | null>(null);
 
   const load = async () => {
@@ -49,24 +54,26 @@ export const EthernetPage: React.FC = () => {
     void load();
   }, []);
 
-  const items = (adapters && adapters.length > 0
-    ? adapters
-    : [
+  const items = (browserOrigin
+    ? [
         {
-          name: status?.interfaceName || (status?.publicIp ? "Active Network Interface (Default Route)" : "Primary Network Adapter"),
+          name: status?.interfaceName || "Visitor browser session",
           up: Boolean(status?.publicIp || status?.ipAddress),
-          speedMbps: status?.linkSpeedMbps ?? null,
-          mtu: 1500,
-          ipv4: status?.ipAddress ?? status?.publicIp ?? null,
+          speedMbps: null,
+          mtu: null,
+          ipv4: status?.ipAddress ?? null,
           ipv6: null,
-          mac: status?.macAddress ?? null,
-          duplex: "Full Duplex",
+          mac: null,
+          duplex: null,
           rxBytes: null,
           txBytes: null,
-          rxErrors: 0,
-          txErrors: 0,
+          rxErrors: null,
+          txErrors: null,
         },
-      ]) as Adapter[];
+      ]
+    : adapters && adapters.length > 0
+      ? adapters
+      : []) as Adapter[];
 
   const up = items.filter((row) => row.up);
   const fastest = up.reduce<number | null>((max, row) => {
@@ -99,8 +106,8 @@ export const EthernetPage: React.FC = () => {
         }
       />
 
-      {note ? <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-mono">{note}</p> : null}
-      {status?.reason ? <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 font-mono">{status.reason}</p> : null}
+      <OriginBanner surface="lan" />
+      {note && !browserOrigin ? <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 font-mono">{note}</p> : null}
       {error ? <p className="text-xs text-rose-800 bg-rose-50 border border-rose-200 rounded-xl px-4 py-3 font-mono">{error}</p> : null}
 
       {/* Hero 4-Card Summary */}
@@ -108,7 +115,7 @@ export const EthernetPage: React.FC = () => {
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Active Adapters</span>
           <span className="mt-1 font-mono text-2xl font-black text-slate-900 block">{items.length}</span>
-          <span className="text-[10px] text-slate-500">Hardware controllers</span>
+          <span className="text-[10px] text-slate-500">{browserOrigin ? "Browser session" : "Hardware controllers"}</span>
         </div>
 
         <div className="dashboard-card p-4">
@@ -125,7 +132,11 @@ export const EthernetPage: React.FC = () => {
 
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Packet Error Rate</span>
-          <span className="mt-1 font-mono text-2xl font-black text-emerald-600 block">0 ERR</span>
+          <span className="mt-1 font-mono text-2xl font-black text-emerald-600 block">
+            {items.some((row) => row.rxErrors != null || row.txErrors != null)
+              ? items.reduce((sum, row) => sum + (row.rxErrors ?? 0) + (row.txErrors ?? 0), 0)
+              : "—"}
+          </span>
           <span className="text-[10px] text-slate-500">Zero frame drops</span>
         </div>
       </div>
@@ -164,7 +175,7 @@ export const EthernetPage: React.FC = () => {
                   <td className="px-4 py-3.5 text-slate-800">{dash(ad.ipv4)}</td>
                   <td className="px-4 py-3.5 text-slate-500">{dash(ad.mac)}</td>
                   <td className="px-4 py-3.5 text-slate-600">
-                    {ad.duplex || "Full"} · MTU {ad.mtu || 1500}
+                    {ad.duplex || "—"} · MTU {ad.mtu ?? "—"}
                   </td>
                   <td className="px-4 py-3.5 text-emerald-600">
                     {ad.rxBytes ? `${(ad.rxBytes / (1024 * 1024)).toFixed(1)} MB` : "—"}

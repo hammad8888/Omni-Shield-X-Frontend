@@ -9,6 +9,7 @@ import { TestResult } from "../components/ui/TestResult";
 import { SpeedChart } from "../components/charts/SpeedChart";
 import { PageHeader } from "../components/ui/PageHeader";
 import { NetworkRouteMap } from "../components/ui/NetworkRouteMap";
+import { OriginBanner } from "../components/ui/OriginBanner";
 
 export const SpeedTestPage: React.FC = () => {
   const {
@@ -56,6 +57,7 @@ export const SpeedTestPage: React.FC = () => {
         }
       />
 
+      <OriginBanner surface="wan" />
 
       {/* Main Interactive Speedometer Gauge Card */}
       <div className="dashboard-card p-6 sm:p-8 flex flex-col items-center">

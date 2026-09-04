@@ -3,13 +3,19 @@ import { TradingWaveChart, type TradingDataPoint } from "../components/charts/Tr
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { PageHeader } from "../components/ui/PageHeader";
 import { api } from "../api";
+import { OriginBanner } from "../components/ui/OriginBanner";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { dash } from "../lib/format";
+import { measureBrowserPingToHost } from "../lib/clientNetwork";
+import { shouldMeasureInBrowser } from "../lib/hostMode";
 import { dnsService } from "../services/dnsService";
+import { useVisitorTelemetry } from "../visitorTelemetry";
 import type { DnsBenchmarkResult } from "../types";
 
 export const PingTestPage: React.FC = () => {
   const { status } = useNetworkStatus();
+  const visitor = useVisitorTelemetry();
+  const browserOrigin = shouldMeasureInBrowser(visitor.capability);
   const [targetHost, setTargetHost] = useState("1.1.1.1");
   const [method, setMethod] = useState<"tcp" | "icmp">("tcp");
   const [isPinging, setIsPinging] = useState(true);
@@ -45,27 +51,33 @@ export const PingTestPage: React.FC = () => {
         let measuredJitter: number | null = null;
         let measuredLoss: number | null = 0;
 
-        try {
-          const query =
-            method === "icmp"
-              ? `/api/ping?host=${encodeURIComponent(host)}&method=icmp`
-              : `/api/ping?host=${encodeURIComponent(host)}&port=443&method=tcp`;
-          const res = await api<{
-            pingMs?: number | null;
-            jitterMs?: number | null;
-            packetLossPct?: number | null;
-            reason?: string;
-            freshness?: string;
-          }>(query);
-          measuredPing = res.pingMs ?? null;
-          measuredJitter = res.jitterMs ?? null;
-          measuredLoss = res.packetLossPct ?? 0;
-          if (res.reason) setReason(res.reason);
-        } catch {
-          // Browser direct ping measurement
-          const { measureBrowserPing } = await import("../lib/clientNetwork");
-          measuredPing = await measureBrowserPing();
+        if (browserOrigin) {
+          measuredPing = await measureBrowserPingToHost(host);
           measuredLoss = measuredPing != null ? 0 : 100;
+          if (method === "icmp") {
+            setReason("ICMP is not available in the browser. This stream uses HTTPS RTT from your device.");
+          }
+        } else {
+          try {
+            const query =
+              method === "icmp"
+                ? `/api/ping?host=${encodeURIComponent(host)}&method=icmp`
+                : `/api/ping?host=${encodeURIComponent(host)}&port=443&method=tcp`;
+            const res = await api<{
+              pingMs?: number | null;
+              jitterMs?: number | null;
+              packetLossPct?: number | null;
+              reason?: string;
+              freshness?: string;
+            }>(query);
+            measuredPing = res.pingMs ?? null;
+            measuredJitter = res.jitterMs ?? null;
+            measuredLoss = res.packetLossPct ?? 0;
+            if (res.reason) setReason(res.reason);
+          } catch {
+            measuredPing = await measureBrowserPingToHost(host);
+            measuredLoss = measuredPing != null ? 0 : 100;
+          }
         }
 
         if (cancelled) return;
@@ -96,7 +108,7 @@ export const PingTestPage: React.FC = () => {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [isPinging, targetHost, method, status?.gateway]);
+  }, [isPinging, targetHost, method, status?.gateway, browserOrigin]);
 
   const currentPing = pingHistory.length ? pingHistory[pingHistory.length - 1] : null;
   const currentJitter = jitterHistory.length ? jitterHistory[jitterHistory.length - 1] : null;
@@ -158,6 +170,7 @@ export const PingTestPage: React.FC = () => {
         }
       />
 
+      <OriginBanner surface="wan" />
       {reason ? <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 font-mono">{reason}</p> : null}
 
       {/* Hero Stats */}
@@ -197,7 +210,7 @@ export const PingTestPage: React.FC = () => {
 
         <div className="dashboard-card p-4">
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Packet Loss</span>
-          <span className="mt-1 font-mono text-2xl font-black text-emerald-600 block">{dash(loss != null ? `${loss}%` : "0%")}</span>
+          <span className="mt-1 font-mono text-2xl font-black text-emerald-600 block">{dash(loss != null ? `${loss}%` : "—")}</span>
           <span className="text-[10px] text-slate-500">
             {loss === 0 ? "0 dropped packets" : `${loss}% loss rate`}
           </span>
@@ -208,7 +221,9 @@ export const PingTestPage: React.FC = () => {
       <TradingWaveChart
         data={chartData}
         title={`Live ${targetHost} Latency Stream (${method.toUpperCase()})`}
-        subtitle="Real-time 1000ms continuous packet RTT oscillation with momentum delta vectors"
+        subtitle={browserOrigin
+          ? "1000ms HTTPS RTT from this browser. Not the Render host path."
+          : "1000ms TCP/ICMP RTT from this Windows host"}
         unit="ms"
         height={260}
         colorScheme="blue"
@@ -244,15 +259,14 @@ export const PingTestPage: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-mono text-slate-700">
-              {(benchmarks.length > 0
-                ? benchmarks
-                : [
-                    { serverName: "Cloudflare DNS", primaryIp: "1.1.1.1", secondaryIp: "1.0.0.1", responseTimeMs: 11, isCurrent: true, features: { dnsSec: true, doh: true, malwareBlocking: true } },
-                    { serverName: "Google Public DNS", primaryIp: "8.8.8.8", secondaryIp: "8.8.4.4", responseTimeMs: 14, isCurrent: false, features: { dnsSec: true, doh: true, malwareBlocking: false } },
-                    { serverName: "Quad9 DNS", primaryIp: "9.9.9.9", secondaryIp: "149.112.112.112", responseTimeMs: 16, isCurrent: false, features: { dnsSec: true, doh: true, malwareBlocking: true } },
-                    { serverName: "OpenDNS / Cisco", primaryIp: "208.67.222.222", secondaryIp: "208.67.220.220", responseTimeMs: 18, isCurrent: false, features: { dnsSec: true, doh: true, malwareBlocking: true } },
-                  ]
-              ).map((res) => (
+              {!benchmarks.length ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-6 text-center font-sans text-slate-500">
+                    Run the DNS benchmark to measure resolver RTT from this device.
+                  </td>
+                </tr>
+              ) : null}
+              {benchmarks.map((res) => (
                 <tr key={res.serverName} className={res.isCurrent ? "bg-blue-50/40" : undefined}>
                   <td className="px-4 py-3.5 font-sans font-bold text-slate-900 flex items-center gap-2">
                     {res.serverName}

@@ -5,7 +5,10 @@ import { StatusBadge } from "../components/ui/StatusBadge";
 import { api } from "../api";
 import { PageHeader } from "../components/ui/PageHeader";
 import { dash } from "../lib/format";
+import { OriginBanner } from "../components/ui/OriginBanner";
 import { formatSpeed, speedParts, usePrefs } from "../prefs";
+import { shouldMeasureInBrowser } from "../lib/hostMode";
+import { useVisitorTelemetry } from "../visitorTelemetry";
 
 type Profile = {
   resolution: string;
@@ -28,6 +31,8 @@ type Readiness = {
 
 export const StreamingTestPage: React.FC = () => {
   const { speedUnit } = usePrefs();
+  const visitor = useVisitorTelemetry();
+  const browserOrigin = shouldMeasureInBrowser(visitor.capability);
   const [data, setData] = useState<Readiness | null>(null);
   const [busy, setBusy] = useState(false);
   const [simulating, setSimulating] = useState<string | null>(null);
@@ -45,7 +50,7 @@ export const StreamingTestPage: React.FC = () => {
     void load();
   }, []);
 
-  const downloadSpeed = data?.downloadMbps ?? null;
+  const downloadSpeed = browserOrigin ? (visitor.downloadMbps ?? data?.downloadMbps ?? null) : (data?.downloadMbps ?? null);
   const downloadParts = speedParts(downloadSpeed ?? 0, speedUnit);
   const readinessScore = data?.overallReadinessPercent ?? (downloadSpeed != null ? Math.min(100, Math.round((downloadSpeed / 30) * 100)) : null);
 
@@ -58,6 +63,7 @@ export const StreamingTestPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <OriginBanner surface="wan" />
       <PageHeader
         title="Video Quality & Ultra-HD Streaming Studio"
         description="Real-time bitrate headroom analytics, buffer health certification, and Chrome/Browser streaming simulation for 4K/8K HDR, YouTube, Netflix, and Twitch."

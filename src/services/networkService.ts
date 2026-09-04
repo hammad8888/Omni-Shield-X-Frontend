@@ -66,46 +66,65 @@ class NetworkService {
     const live = this.last ?? (await this.getLive());
     const s = live.status ?? {};
     
-    // Supplement with real browser client telemetry if server fields are empty
+    const { shouldMeasureInBrowser } = await import("../lib/hostMode");
+    const remote = shouldMeasureInBrowser();
+
     let clientEffectiveType: string | null = null;
     let clientPublicIp: string | null = null;
     let clientLocation: string | null = null;
-    
+    let clientLocalIp: string | null = null;
+    let clientIsp: string | null = null;
+
     try {
       const { probeClientNetwork } = await import("../lib/clientNetwork");
       const client = await probeClientNetwork();
       clientEffectiveType = client.effectiveType ? client.effectiveType.toUpperCase() : null;
       clientPublicIp = client.publicIp ?? null;
       clientLocation = client.location ?? null;
+      clientLocalIp = client.localIp ?? null;
+      clientIsp = client.isp ?? null;
     } catch {
       /* ignore */
     }
 
-    const publicIp = s.publicIp || clientPublicIp || null;
-    const mediaType = (s.mediaType as NetworkStatus["mediaType"]) !== "Unknown"
-      ? (s.mediaType as NetworkStatus["mediaType"])
-      : clientEffectiveType ? (clientEffectiveType.includes("4G") || clientEffectiveType.includes("5G") ? "Cellular" : "Wi-Fi") : "Unknown";
+    const publicIp = remote ? (clientPublicIp || s.publicIp || null) : (s.publicIp || clientPublicIp || null);
+    const hostMedia = s.mediaType as NetworkStatus["mediaType"] | undefined;
+    const mediaType = remote
+      ? (clientEffectiveType?.includes("4G") || clientEffectiveType?.includes("5G")
+          ? "Cellular"
+          : clientEffectiveType
+            ? "Wi-Fi"
+            : "Unknown")
+      : hostMedia && hostMedia !== "Unknown"
+        ? hostMedia
+        : clientEffectiveType
+          ? (clientEffectiveType.includes("4G") || clientEffectiveType.includes("5G") ? "Cellular" : "Wi-Fi")
+          : "Unknown";
 
     return {
       state: publicIp ? "Connected" : (s.state as NetworkStatus["state"]) || "Offline",
       mediaType,
-      ssid: s.ssid ?? null,
-      interfaceName: s.interfaceName ?? (clientEffectiveType ? `Browser Client (${clientEffectiveType})` : null),
-      ipAddress: s.ipAddress ?? null,
-      gateway: s.gateway ?? null,
-      macAddress: s.macAddress ?? null,
-      dnsServers: s.dnsServers ?? [],
-      isp: s.isp ?? (publicIp ? "Cloudflare Anycast" : null),
+      ssid: remote ? null : (s.ssid ?? null),
+      interfaceName: remote
+        ? (clientEffectiveType ? `Visitor browser (${clientEffectiveType})` : "Visitor browser")
+        : (s.interfaceName ?? (clientEffectiveType ? `Browser Client (${clientEffectiveType})` : null)),
+      ipAddress: remote ? (clientLocalIp ?? null) : (s.ipAddress ?? clientLocalIp ?? null),
+      gateway: remote ? null : (s.gateway ?? null),
+      macAddress: remote ? null : (s.macAddress ?? null),
+      dnsServers: remote ? [] : (s.dnsServers ?? []),
+      isp: remote ? (clientIsp ?? (publicIp ? "Cloudflare Edge (visitor)" : null)) : (s.isp ?? (publicIp ? "Cloudflare Anycast" : null)),
       publicIp,
-      signalDbm: s.signalDbm ?? null,
-      signalPercent: s.signalPercent ?? null,
-      linkSpeedMbps: s.linkSpeedMbps ?? null,
+      signalDbm: remote ? null : (s.signalDbm ?? null),
+      signalPercent: remote ? null : (s.signalPercent ?? null),
+      linkSpeedMbps: remote ? null : (s.linkSpeedMbps ?? null),
       healthScore: s.healthScore ?? null,
       healthLabel: s.healthLabel ?? null,
-      freshness: live.freshness || "LIVE",
-      source: live.source || "client-browser",
-      reason: live.reason ?? null,
-      locationHint: s.locationHint ?? clientLocation ?? null,
+      freshness: "LIVE",
+      source: remote ? "visitor-browser" : (live.source || "client-browser"),
+      reason: remote
+        ? "WAN identity and latency are measured from this browser. LAN/Wi-Fi radio fields require a local Windows agent."
+        : (live.reason ?? null),
+      locationHint: clientLocation ?? (remote ? null : (s.locationHint ?? null)),
     };
   }
 
@@ -113,6 +132,9 @@ class NetworkService {
     const live = this.last ?? (await this.getLive());
     const m = live.metrics ?? {};
     
+    const { shouldMeasureInBrowser } = await import("../lib/hostMode");
+    const remote = shouldMeasureInBrowser();
+
     let browserDownlink: number | null = null;
     let browserRtt: number | null = null;
     try {
@@ -124,8 +146,8 @@ class NetworkService {
       /* ignore */
     }
 
-    const downloadVal = m.download ?? browserDownlink ?? null;
-    const pingVal = m.ping ?? browserRtt ?? null;
+    const downloadVal = remote ? (browserDownlink ?? m.download ?? null) : (m.download ?? browserDownlink ?? null);
+    const pingVal = remote ? (browserRtt ?? null) : (m.ping ?? browserRtt ?? null);
 
     return {
       download: metric(downloadVal, "Mbps", "speed"),

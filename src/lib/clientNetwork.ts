@@ -128,15 +128,44 @@ export async function probeClientNetwork(): Promise<ClientNetworkInfo> {
   };
 }
 
-export async function measureBrowserPing(url = "https://1.1.1.1/cdn-cgi/trace"): Promise<number | null> {
+const PING_URLS: Record<string, string> = {
+  "1.1.1.1": "https://speed.cloudflare.com/cdn-cgi/trace",
+  "speed.cloudflare.com": "https://speed.cloudflare.com/cdn-cgi/trace",
+  "one.one.one.one": "https://one.one.one.one/cdn-cgi/trace",
+  "8.8.8.8": "https://dns.google/resolve?name=example.com&type=A",
+  "9.9.9.9": "https://dns.quad9.net:5053/dns-query?name=example.com&type=A",
+  "208.67.222.222": "https://doh.opendns.com/dns-query?name=example.com&type=A",
+};
+
+function pingUrlForHost(host: string): string {
+  if (host.startsWith("http://") || host.startsWith("https://")) return host;
+  return PING_URLS[host] ?? `https://${host.replace(/\/+$/, "")}/`;
+}
+
+export async function measureBrowserPing(url = "https://speed.cloudflare.com/cdn-cgi/trace"): Promise<number | null> {
+  const target = pingUrlForHost(url);
   try {
     const start = performance.now();
-    await fetch(`${url}?_t=${Date.now()}`, { mode: "no-cors", cache: "no-store", signal: AbortSignal.timeout(2000) });
+    await fetch(`${target}${target.includes("?") ? "&" : "?"}_t=${Date.now()}`, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(2500),
+    });
     const elapsed = Math.round((performance.now() - start) * 10) / 10;
     return elapsed > 0 ? elapsed : null;
   } catch {
-    return null;
+    try {
+      const start = performance.now();
+      await fetch(target, { mode: "no-cors", cache: "no-store", signal: AbortSignal.timeout(2500) });
+      const elapsed = Math.round((performance.now() - start) * 10) / 10;
+      return elapsed > 0 ? elapsed : null;
+    } catch {
+      return null;
+    }
   }
+}
+
+export async function measureBrowserPingToHost(host: string): Promise<number | null> {
+  return measureBrowserPing(pingUrlForHost(host));
 }
 
 export async function measureClientLatency(samplesCount = 4): Promise<{ pingMs: number | null; jitterMs: number | null }> {

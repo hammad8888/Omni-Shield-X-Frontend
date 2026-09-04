@@ -1,5 +1,6 @@
 import type { SpeedTestProgress, SpeedTestResult, SpeedTestServer } from "../types";
 import { api } from "../api";
+import { shouldMeasureInBrowser } from "../lib/hostMode";
 import { getRealtimeSocket } from "../socket";
 import { socketPayload } from "../lib/socketPayload";
 
@@ -223,15 +224,20 @@ class SpeedTestService {
       server: this.activeServer,
     };
     this.notify();
-    this.pollTimer = window.setInterval(() => {
-      void this.pullLiveProgress();
-    }, 200);
+    const browserOrigin = shouldMeasureInBrowser();
+    if (!browserOrigin) {
+      this.pollTimer = window.setInterval(() => {
+        void this.pullLiveProgress();
+      }, 200);
+    }
     const socket = getRealtimeSocket();
     const onProgress = (message: unknown) => {
+      if (browserOrigin) return;
       const live = socketPayload<LiveProgress>(message);
       if (live) this.applyLive(live);
     };
     const onComplete = (message: unknown) => {
+      if (browserOrigin) return;
       const result = socketPayload<LiveProgress & { freshness?: string; packetLossPct?: number | null }>(message);
       if (!result) return;
       this.applyLive({
@@ -245,8 +251,86 @@ class SpeedTestService {
       socket.off("speedtest:progress", onProgress);
       socket.off("speedtest:complete", onComplete);
     };
-    void this.pullLiveProgress();
+    if (!browserOrigin) void this.pullLiveProgress();
     void this.runLive().finally(cleanup);
+  }
+
+  private async runBrowserOrigin() {
+    const { shouldMeasureInBrowser } = await import("../lib/hostMode");
+    if (!shouldMeasureInBrowser()) return false;
+    const { runBrowserSpeedTest } = await import("../lib/browserSpeedTest");
+    const result = await runBrowserSpeedTest({
+      connectionType: this.connectionType,
+      serverName: this.activeServer.name,
+      onProgress: (live) => this.applyLive(live),
+    });
+    if (!this.isRunning) return true;
+    this.stopPoll();
+    this.applyLive({ ...result, phase: result.freshness === "UNAVAILABLE" ? "error" : "completed" });
+    const mapped = mapResult(
+      {
+        id: `browser-${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        downloadMbps: result.downloadMbps,
+        uploadMbps: result.uploadMbps,
+        pingMs: result.pingMs,
+        jitterMs: result.jitterMs,
+        packetLossPct: result.packetLossPct,
+        server: result.server,
+        isp: result.isp,
+        connectionType: result.connectionType,
+        qualityScore: result.qualityScore,
+        qualityLabel: result.qualityLabel,
+      },
+      this.activeServer,
+    );
+    this.history.unshift(mapped);
+    this.currentProgress = {
+      phase: result.freshness === "UNAVAILABLE" ? "error" : "completed",
+      progressPercent: 100,
+      currentSpeedMbps: result.downloadMbps ?? 0,
+      pingMs: result.pingMs ?? 0,
+      jitterMs: result.jitterMs ?? 0,
+      downloadMbps: result.downloadMbps ?? 0,
+      uploadMbps: result.uploadMbps ?? 0,
+      packetLossPercent: result.packetLossPct ?? 0,
+      server: this.activeServer,
+      downloadDataPoints: result.downloadSamples,
+      uploadDataPoints: result.uploadSamples,
+    };
+    this.isRunning = false;
+    this.notify();
+    try {
+      const { publishVisitorSpeed } = await import("../visitorTelemetry");
+      publishVisitorSpeed(result.downloadMbps, result.uploadMbps);
+    } catch {
+      /* ignore */
+    }
+    try {
+      await api("/api/speedtest", {
+        method: "POST",
+        body: JSON.stringify({
+          origin: "browser",
+          connectionType: this.connectionType,
+          serverId: this.activeServer.id,
+          serverName: this.activeServer.name,
+          downloadMbps: result.downloadMbps,
+          uploadMbps: result.uploadMbps,
+          pingMs: result.pingMs,
+          jitterMs: result.jitterMs,
+          packetLossPct: result.packetLossPct,
+          isp: result.isp,
+          publicIp: result.publicIp,
+          localIp: result.localIp,
+          locationHint: result.locationHint,
+          downloadSamples: result.downloadSamples,
+          uploadSamples: result.uploadSamples,
+        }),
+      });
+    } catch {
+      /* history still kept locally */
+    }
+    return true;
   }
 
   private applyLive(live: LiveProgress) {
@@ -307,6 +391,7 @@ class SpeedTestService {
 
   private async runLive() {
     try {
+      if (await this.runBrowserOrigin()) return;
       const res = await api<{
         item: Record<string, unknown>;
         downloadSamples?: number[];

@@ -7,7 +7,10 @@ import { StatusBadge } from "../components/ui/StatusBadge";
 import { PageHeader } from "../components/ui/PageHeader";
 import { SignalChart } from "../components/charts/SignalChart";
 import { NetworkTable } from "../components/ui/NetworkTable";
+import { OriginBanner } from "../components/ui/OriginBanner";
 import { formatSpeed, usePrefs } from "../prefs";
+import { shouldMeasureInBrowser } from "../lib/hostMode";
+import { useVisitorTelemetry } from "../visitorTelemetry";
 
 export const WiFiOverviewPage: React.FC = () => {
   const {
@@ -23,6 +26,8 @@ export const WiFiOverviewPage: React.FC = () => {
     reason,
   } = useWiFi();
   const { status } = useNetworkStatus();
+  const visitor = useVisitorTelemetry();
+  const browserOrigin = shouldMeasureInBrowser(visitor.capability);
   const { speedUnit } = usePrefs();
   const [activeBand, setActiveBand] = useState<"2.4 GHz" | "5 GHz">("5 GHz");
   const [activeTab, setActiveTab] = useState<"overview" | "channels" | "nearby">("overview");
@@ -51,7 +56,8 @@ export const WiFiOverviewPage: React.FC = () => {
         }
       />
 
-      {reason ? <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 font-mono">{reason}</p> : null}
+      <OriginBanner surface="wifi" />
+      {reason && !browserOrigin ? <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 font-mono">{reason}</p> : null}
 
       {/* Main Connection Banner */}
       <div className="dashboard-card p-6 bg-gradient-to-r from-blue-50/50 via-white to-white border-blue-100">

@@ -1,11 +1,15 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
+import { shouldMeasureInBrowser } from "../lib/hostMode";
 import { useRealtime } from "../realtime";
+import { useVisitorTelemetry } from "../visitorTelemetry";
 
 export const Header: React.FC<{ onToggleSidebar?: () => void }> = ({ onToggleSidebar }) => {
   const { status } = useNetworkStatus();
   const { transport } = useRealtime();
+  const visitor = useVisitorTelemetry();
+  const browserOrigin = shouldMeasureInBrowser(visitor.capability);
   const [query, setQuery] = useState("");
   const navigate = useNavigate();
 
@@ -72,7 +76,7 @@ export const Header: React.FC<{ onToggleSidebar?: () => void }> = ({ onToggleSid
           }`}
         >
           <span className={`h-1.5 w-1.5 rounded-full ${transport === "LIVE" ? "bg-emerald-500 animate-pulse" : "bg-slate-400"}`} />
-          {transport === "LIVE" ? "LIVE" : transport === "STALE" ? "POLL" : "OFF"}
+          {browserOrigin ? "BROWSER LIVE" : transport === "LIVE" ? "LIVE" : transport === "STALE" ? "POLL" : "OFF"}
         </span>
         <Link
           to="/speedtest"
