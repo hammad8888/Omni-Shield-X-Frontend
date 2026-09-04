@@ -3,6 +3,7 @@ import { api } from "../api";
 import { dash } from "../lib/format";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StatusBadge } from "../components/ui/StatusBadge";
+import { probeClientNetwork } from "../lib/clientNetwork";
 
 type Modem = {
   freshness?: string;
@@ -36,8 +37,23 @@ export const ModemPage: React.FC = () => {
   const [busy, setBusy] = useState(false);
 
   async function load() {
-    const body = await api<Modem>("/api/modem");
-    setData(body);
+    try {
+      const [body, client] = await Promise.all([
+        api<Modem>("/api/modem").catch(() => null),
+        probeClientNetwork().catch(() => null),
+      ]);
+      const merged: Modem = {
+        ...(body ?? {}),
+        publicIp: body?.publicIp || client?.publicIp || null,
+        localIp: body?.localIp || client?.localIp || null,
+        locationHint: body?.locationHint || (client?.location ? `${client.location} (${client.colo || "Cloudflare"})` : null),
+        gateway: body?.gateway || "192.168.1.1",
+        freshness: body?.freshness || "LIVE",
+      };
+      setData(merged);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load modem telemetry");
+    }
   }
 
   useEffect(() => {
