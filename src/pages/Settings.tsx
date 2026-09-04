@@ -20,22 +20,25 @@ export const SettingsPage: React.FC = () => {
   const { transport, reason } = useRealtime();
 
   // Deployment tester state
-  const [testUrl, setTestUrl] = useState(API_BASE || window.location.origin);
+  const [testUrl, setTestUrl] = useState(API_BASE || "https://omni-shield-x-backend.onrender.com");
   const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
   const [testResult, setTestResult] = useState<string | null>(null);
 
-  const handleTestBackend = async () => {
+  const handleTestBackend = async (targetUrl?: string) => {
+    const urlToTest = (targetUrl || testUrl).trim().replace(/\/+$/, "");
     setTestStatus("testing");
     setTestResult(null);
     try {
-      const fullUrl = testUrl.replace(/\/+$/, "") + "/health";
+      const fullUrl = `${urlToTest}/`;
       const start = Date.now();
-      const res = await fetch(fullUrl);
+      const res = await fetch(fullUrl, { headers: { Accept: "application/json" } });
       const elapsed = Date.now() - start;
       if (res.ok) {
         const body = await res.json().catch(() => ({}));
         setTestStatus("success");
-        setTestResult(`✅ Connected! HTTP ${res.status} in ${elapsed}ms. API Version: ${(body as { version?: string })?.version || "1.0.0"}`);
+        setTestResult(
+          `✅ Connected! HTTP ${res.status} in ${elapsed}ms. Service: ${(body as { service?: string })?.service || "OmniShield API"} (v${(body as { version?: string })?.version || "1.0.0"})`,
+        );
       } else {
         setTestStatus("error");
         setTestResult(`❌ Server reachable but returned HTTP ${res.status} ${res.statusText}`);
@@ -44,6 +47,19 @@ export const SettingsPage: React.FC = () => {
       setTestStatus("error");
       setTestResult(`❌ Connection Failed: ${err instanceof Error ? err.message : "Network error"}. Check CORS and URL.`);
     }
+  };
+
+  const handleSaveEndpoint = () => {
+    const clean = testUrl.trim().replace(/\/+$/, "");
+    if (clean) {
+      localStorage.setItem("omnishield.api_url", clean);
+      window.location.reload();
+    }
+  };
+
+  const handleResetEndpoint = () => {
+    localStorage.removeItem("omnishield.api_url");
+    window.location.reload();
   };
 
   return (
@@ -163,24 +179,65 @@ export const SettingsPage: React.FC = () => {
 
         {/* Live Backend Connectivity Tester */}
         <div className="rounded-xl border border-blue-200 bg-blue-50/40 p-4 space-y-3">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-blue-800">Live Backend Health & Connectivity Tester</h4>
+          <div className="flex items-center justify-between">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-blue-800">Live Backend Health & Connectivity Tester</h4>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setTestUrl("https://omni-shield-x-backend.onrender.com");
+                  void handleTestBackend("https://omni-shield-x-backend.onrender.com");
+                }}
+                className="rounded-lg bg-blue-100 hover:bg-blue-200 px-2 py-1 text-[11px] font-bold text-blue-800 transition"
+              >
+                Render Live Preset
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTestUrl("http://localhost:3001");
+                  void handleTestBackend("http://localhost:3001");
+                }}
+                className="rounded-lg bg-slate-200 hover:bg-slate-300 px-2 py-1 text-[11px] font-bold text-slate-800 transition"
+              >
+                Localhost Preset
+              </button>
+            </div>
+          </div>
           <p className="text-xs text-slate-600">
-            Enter your Render backend URL below to test live HTTP and WebSocket connectivity:
+            Current Active API Target: <code className="bg-white px-1.5 py-0.5 border rounded font-mono text-blue-700">{API_BASE || "(Vite Proxy / Local)"}</code>
           </p>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <input
               value={testUrl}
               onChange={(e) => setTestUrl(e.target.value)}
-              placeholder="https://your-backend.onrender.com"
-              className="flex-1 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-mono text-slate-900 focus:border-blue-500 focus:outline-none"
+              placeholder="https://omni-shield-x-backend.onrender.com"
+              className="flex-1 min-w-[240px] rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-mono text-slate-900 focus:border-blue-500 focus:outline-none"
             />
             <button
+              type="button"
               onClick={() => void handleTestBackend()}
               disabled={testStatus === "testing" || !testUrl}
               className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition-all disabled:opacity-50"
             >
               {testStatus === "testing" ? "Testing..." : "Test Connection"}
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveEndpoint}
+              className="rounded-xl bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-all"
+              title="Save this URL as current target and reload"
+            >
+              Set as Active
+            </button>
+            <button
+              type="button"
+              onClick={handleResetEndpoint}
+              className="rounded-xl bg-slate-500 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-slate-600 transition-all"
+              title="Reset to default"
+            >
+              Reset
             </button>
           </div>
 

@@ -1,11 +1,12 @@
 import { io, type Socket } from "socket.io-client";
-import { getAccessToken, API_BASE } from "./api";
+import { getAccessToken, resolveApiBase } from "./api";
 
 let socket: Socket | null = null;
 
 export function getRealtimeSocket() {
   if (socket) return socket;
-  const wsUrl = import.meta.env.VITE_WS_URL || API_BASE || undefined;
+  const baseUrl = resolveApiBase();
+  const wsUrl = import.meta.env.VITE_WS_URL || (baseUrl ? baseUrl : undefined);
   socket = io(wsUrl, {
     path: "/socket.io",
     transports: ["websocket", "polling"],
